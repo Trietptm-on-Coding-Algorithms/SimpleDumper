@@ -1,4 +1,3 @@
-#include <map>
 #include "utils.h"
 #include <windows.h>
 
@@ -12,7 +11,8 @@ class PEhelper
 	NT_HEADERS ntHeaders;
 	bool x64;
 	void * getPEstructure ();
+	void * PEheaderAddr;
 	public:
 	PEhelper (HANDLE, void *);
-	std::map <void *, std::string> getSections ();	
+	IMAGE_SECTION_HEADER * getSections ();
 };
