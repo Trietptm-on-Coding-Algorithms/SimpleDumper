@@ -17,12 +17,13 @@ PEhelper<NT_HEADERS>::PEhelper (HANDLE processHandle, void * baseAddress)
 	}
 }
 template <class NT_HEADERS>
-IMAGE_SECTION_HEADER * PEhelper<NT_HEADERS>::getSections ()
+IMAGE_SECTION_HEADER * PEhelper<NT_HEADERS>::getSections (int * nSections)
 {
 	WORD numberOfSections = ntHeaders.FileHeader.NumberOfSections;
 	uint64_t sectionsStartAddr =  (uint64_t) PEheaderAddr + sizeof (ntHeaders);
 
 	IMAGE_SECTION_HEADER * sections = new IMAGE_SECTION_HEADER [numberOfSections];
+	*nSections = numberOfSections;
 	for (int i = 0 ; i < numberOfSections; i++)
 	{
 		if (!ReadProcessMemory (processHandle, (LPCVOID) sectionsStartAddr + (sizeof(IMAGE_SECTION_HEADER) * i), &sections[i], sizeof (IMAGE_SECTION_HEADER), NULL))

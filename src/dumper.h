@@ -4,6 +4,7 @@
 #include <windows.h>
 #include "memory.h"
 #include "peHelper.h"
+#include "peb.h"
 
 class dumper 
 {
@@ -11,6 +12,9 @@ class dumper
 		HANDLE stdoutHandle;
 		STARTUPINFO si;
     	PROCESS_INFORMATION pi;
+    	int wow64 = false;
+    	void * getPEBaddr ();
+    	void * getImageBase ();
 	public:
 		dumper (std::string, void *);
 		void saveAsFile (std::string);

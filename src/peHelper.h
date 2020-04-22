@@ -14,5 +14,5 @@ class PEhelper
 	void * PEheaderAddr;
 	public:
 	PEhelper (HANDLE, void *);
-	IMAGE_SECTION_HEADER * getSections ();
+	IMAGE_SECTION_HEADER * getSections (int *);
 };
