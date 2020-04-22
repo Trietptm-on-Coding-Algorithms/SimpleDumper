@@ -1,57 +1,5 @@
 #include "dumper.h"
 
-typedef NTSTATUS (*pNtQueryInformationProcess) (HANDLE, DWORD, PVOID, ULONG, PULONG);
-
-typedef struct _PROCESS_BASIC_INFORMATION 
-{
-    PVOID Reserved1;
-    PVOID PebBaseAddress;
-    PVOID Reserved2[2];
-    ULONG_PTR UniqueProcessId;
-    PVOID Reserved3;
-} PROCESS_BASIC_INFORMATION;
-
-pNtQueryInformationProcess NtQueryInformationProcess()
-{
-    static pNtQueryInformationProcess fNtQueryInformationProcess = NULL;
-    if (!fNtQueryInformationProcess)
-    {
-        HMODULE hNtdll = GetModuleHandle("ntdll.dll"); // loaded in every process not needed to load library
-        fNtQueryInformationProcess = (pNtQueryInformationProcess) GetProcAddress(hNtdll, "NtQueryInformationProcess");
-    }
-    return fNtQueryInformationProcess;
-}
-
-void * dumper::getPEBaddr ()
-{
-	PROCESS_BASIC_INFORMATION processInfo;
-	NtQueryInformationProcess () (pi.hProcess, 0, &processInfo, sizeof (processInfo), nullptr); // 0 - ProcessBasicInformation
-	return (void *) processInfo.PebBaseAddress;
-}
-void * dumper::getImageBase ()
-{
-	void * PEB = getPEBaddr ();
-	if (wow64)
-	{
-		PEB32 peb;
-		if (!ReadProcessMemory (pi.hProcess, (LPVOID) PEB, &peb, sizeof (PEB32), NULL))
-		{
-			log ("Cannot read PEB32 of process \n", logType::ERR, stdoutHandle);
-			throw std::exception ();
-		}
-		return (void *) peb.ImageBaseAddress;
-	}
-	else
-	{
-		PEB64 peb;
-		if (!ReadProcessMemory (pi.hProcess, (LPVOID) PEB, &peb, sizeof (PEB64), NULL))
-		{
-			log ("Cannot read PEB64 of process \n", logType::ERR, stdoutHandle);
-			throw std::exception ();
-		}
-		return (void *) peb.ImageBaseAddress;
-	}
-}
 dumper::dumper (std::string fileName, void * OEP)
 {
 	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -60,38 +8,70 @@ dumper::dumper (std::string fileName, void * OEP)
     si.cb = sizeof(si);
     ZeroMemory( &pi, sizeof(pi) );
 
-	if (!CreateProcess (fileName.c_str(), nullptr, nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
+	if (!CreateProcess (fileName.c_str(), nullptr, nullptr, nullptr, FALSE, DEBUG_ONLY_THIS_PROCESS | CREATE_SUSPENDED, nullptr, nullptr, &si, &pi))
 	{
 		log ("Cannot create new process %s \n", logType::ERR, stdoutHandle ,fileName.c_str());
 		throw std::exception ();
 	}
-	void * imageBase = getImageBase ();
-	printf ("%.16llx \n",imageBase);
-	/*
-	memoryMap * memMap = new memoryMap ();
-	memMap->updateMemoryMap (pi.hProcess);
-	memMap->showMemoryMap ();
-	*/
-	if (!IsWow64Process (pi.hProcess, &wow64))
-	{
-		log ("Cannot determine is process running under WOW64 subsystem by IsWow64Process() %s \n", logType::ERR, stdoutHandle);
-		throw std::exception ();
-	}
 
-	PEhelper <IMAGE_NT_HEADERS64> packedPE (pi.hProcess, (void *) imageBase);
+	packedPE = new PEparser <IMAGE_NT_HEADERS64>  (pi.hProcess);
+	packedPE->showSections ();
+	packedPE->removeXrightOthers ();
 
-	int nSections;
-	IMAGE_SECTION_HEADER * sections = packedPE.getSections (&nSections);
-	for (int i = 0 ; i < nSections; i++)
+	ResumeThread (pi.hThread);
+	dbgLoop ();
+}
+void dumper::suggestOEP (uint64_t addr)
+{
+	log ("SimpleDumper suggest OEP to be at %.16llx \n",logType::ERR, stdoutHandle, addr);
+}
+void dumper::dbgLoop ()
+{
+	bool debugging = true;
+	while (debugging)
 	{
-		printf ("%s --> %.16llx [%.16llx] \n", sections[i].Name, sections[i].VirtualAddress, sections[i].Misc.VirtualSize);
+		DEBUG_EVENT debugEvent;
+		if (!WaitForDebugEvent (&debugEvent,INFINITE))
+	    {
+	        log ("WaitForDebugEvent returned nonzero value\n",logType::ERR, stdoutHandle);
+	        throw std::exception ();
+	    }
+	    if (debugEvent.dwDebugEventCode == EXCEPTION_DEBUG_EVENT)
+	    {
+	    	EXCEPTION_DEBUG_INFO exception = debugEvent.u.Exception;
+	    	uint64_t exceptionAddr = (uint64_t) exception.ExceptionRecord.ExceptionAddress;
+	    	switch (exception.ExceptionRecord.ExceptionCode)
+	    	{
+	    	    case EXCEPTION_ACCESS_VIOLATION:
+	    	    {
+	    	    	if (packedPE->isAddressInTrappedSections (exceptionAddr) && exception.dwFirstChance)
+	    	    	{
+						suggestOEP (exceptionAddr);
+	    	    	}
+	    	    	break;
+	    	    }
+	    	    /*
+	    	    case EXCEPTION_BREAKPOINT:
+	    	    {
+	    	    	log ("Breakpoint ??? \n",logType::ERR, stdoutHandle);
+	    	    	break;
+	    	    }
+	    	    case EXCEPTION_SINGLE_STEP:
+	    	    {
+	    	    	log ("Single step ???\n",logType::ERR, stdoutHandle);
+	    	    	break;
+	    	    }
+	    	    */
+	    	}
+	    }
+	    else if (debugEvent.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT)
+        {
+            EXIT_PROCESS_DEBUG_INFO infoProc = debugEvent.u.ExitProcess;
+            log ("Process %u exited with code 0x%.08x\n", logType::ERR, stdoutHandle, debugEvent.dwProcessId, infoProc.dwExitCode);
+            debugging = false;
+        }
+	    ContinueDebugEvent (debugEvent.dwProcessId,debugEvent.dwThreadId, DBG_EXCEPTION_NOT_HANDLED);
 	}
-	//delete packedPE;
-	//delete memMap;
-	/*
-	asm (".byte 0xeb");
-	asm (".byte 0xfe");
-	*/
 }
 void dumper::saveAsFile (std::string fileName)
 {

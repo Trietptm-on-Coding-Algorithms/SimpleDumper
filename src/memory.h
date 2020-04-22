@@ -5,16 +5,6 @@
 #include <vector>
 #include "utils.h"
 
-struct memoryRegion
-{
-	std::string name = "";
-	uint64_t start;
-	uint64_t size;
-	std::string protection = "*****"; // when type is reserved protection is undefined
-	std::string state;
-	std::string type;
-	// access rights
-};
 struct memoryProtection
 {
 	bool read = 0;
@@ -23,6 +13,17 @@ struct memoryProtection
 	bool copy = 0;
 	bool guard = 0;
 	std::string toString ();
+};
+
+struct memoryRegion
+{
+	std::string name = "";
+	uint64_t start;
+	uint64_t size;
+	memoryProtection protection; // when type is reserved protection is undefined
+	std::string state;
+	std::string type;
+	// access rights
 };
 
 struct baseRegion // e.g. all memory regions that belongs to specific module
@@ -35,11 +36,16 @@ struct baseRegion // e.g. all memory regions that belongs to specific module
 class memoryMap
 {
 	private:
+		HANDLE processHandle;
+		HANDLE stdoutHandle;
 		std::vector <baseRegion> baseRegions;
-	public:
-		memoryMap ();
-		void updateMemoryMap (HANDLE);
-		void showMemoryMap ();
 		void setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion *);
+		DWORD memoryProtectionToDWORD (memoryProtection);
+	public:
+		memoryMap (HANDLE);
+		void updateMemoryMap ();
+		void showMemoryMap ();
+		memoryProtection protectionForAddr (uint64_t addr);
+		void setProtection (uint64_t, uint64_t, memoryProtection);
 
 };

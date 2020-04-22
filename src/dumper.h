@@ -1,10 +1,8 @@
 #pragma once
 #include <string>
-#include "utils.h"
 #include <windows.h>
-#include "memory.h"
-#include "peHelper.h"
-#include "peb.h"
+#include "utils.h"
+#include "peParser.h"
 
 class dumper 
 {
@@ -12,11 +10,10 @@ class dumper
 		HANDLE stdoutHandle;
 		STARTUPINFO si;
     	PROCESS_INFORMATION pi;
-    	int wow64 = false;
-    	void * getPEBaddr ();
-    	void * getImageBase ();
+    	void dbgLoop ();
+    	void suggestOEP (uint64_t);
+    	PEparser <IMAGE_NT_HEADERS64> * packedPE;
 	public:
 		dumper (std::string, void *);
 		void saveAsFile (std::string);
-		void * getPeb (HANDLE);
 };
